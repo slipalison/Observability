@@ -1,0 +1,102 @@
+# =================================================================
+# PROMETHEUS - COLETA E ARMAZENAMENTO DE MÉTRICAS
+# =================================================================
+
+global:
+  scrape_interval: 15s     # Intervalo padrão de coleta
+  evaluation_interval: 15s # Intervalo de avaliação de regras
+  scrape_timeout: 10s      # Timeout para coletas
+
+  external_labels:
+    monitor: 'observability-demo'
+    environment: 'development'
+
+# Regras para alertas e agregações
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+  # Coletar métricas do próprio Prometheus
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Coletar métricas do OpenTelemetry Collector
+  - job_name: "otel-collector"
+    scrape_interval: 10s
+    static_configs:
+      - targets: ["otel-collector:8889"]
+        labels:
+          service: "otel-collector"
+          component: "collector"
+
+  # Coletar métricas do OpenTelemetry Collector (endpoint de saúde)
+  - job_name: "otel-collector-health"
+    scrape_interval: 5s
+    metrics_path: "/"  
+    static_configs:
+      - targets: ["otel-collector:13133"]
+
+  # Coletar métricas do Tempo
+  - job_name: "tempo"
+    static_configs:
+      - targets: ["tempo:3200"]
+        labels:
+          service: "tempo"
+
+  # Coletar métricas da API .NET usando o endpoint de métricas
+  - job_name: "observability-webapi"
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["observability.webapi:8081"]
+        labels:
+          service: "observability-webapi"
+          component: "api"
+
+  # Coletar métricas do Redis
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: "redis"
+          component: "cache"
+
+  # Coletar métricas do PostgreSQL
+  - job_name: "postgresql"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: "postgresql"
+          component: "database"
+
+  # Alloy - Grafana Agent
+  - job_name: "alloy"
+    static_configs:
+      - targets: ["alloy:12345"]
+        labels:
+          service: "alloy"
+          component: "logging"
+
+  # Descoberta automática de targets Docker
+  - job_name: "docker"
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+    relabel_configs:
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: "container"
+      - source_labels: ["__meta_docker_container_label_logging"]
+        regex: "promtail"
+        action: "keep"
+
+# Configuração de armazenamento remoto (opcional para escalar horizontalmente)
+# remote_write:
+#   - url: "http://remote-write-endpoint/api/v1/write"
+#     remote_timeout: 30s
+#     queue_config:
+#       capacity: 10000
+#       max_samples_per_send: 1000
+#       batch_send_deadline: 5s
+#       min_backoff: 30ms
+#       max_backoff: 100ms

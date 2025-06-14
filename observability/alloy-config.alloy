@@ -1,0 +1,107 @@
+// =================================================================
+// ALLOY - CONFIGURAÇÃO PARA LER LABELS DO DOCKER
+// =================================================================
+
+// Descoberta de containers Docker
+discovery.docker "containers" {
+    host = "unix:///var/run/docker.sock"
+    refresh_interval = "5s"
+}
+
+// Processamento para extrair TODAS as labels
+discovery.relabel "docker_labels" {
+    targets = discovery.docker.containers.targets
+    
+    // Nome do container
+    rule {
+        source_labels = ["__meta_docker_container_name"]
+        regex = "/(.*)"
+        target_label = "container_name"
+    }
+    
+    // Service do compose
+    rule {
+        source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label = "compose_service"
+    }
+    
+    // TODAS as labels personalizadas que você definiu no compose.yaml
+    rule {
+        source_labels = ["__meta_docker_container_label_service"]
+        target_label = "service"
+    }
+    
+    rule {
+        source_labels = ["__meta_docker_container_label_team"]
+        target_label = "team"
+    }
+    
+    rule {
+        source_labels = ["__meta_docker_container_label_application"]
+        target_label = "application"
+    }
+    
+    rule {
+        source_labels = ["__meta_docker_container_label_component"]
+        target_label = "component"
+    }
+    
+    rule {
+        source_labels = ["__meta_docker_container_label_framework"]
+        target_label = "framework"
+    }
+    
+    rule {
+        source_labels = ["__meta_docker_container_label_version"]
+        target_label = "app_version"
+    }
+    
+    rule {
+        source_labels = ["__meta_docker_container_label_environment"]
+        target_label = "env"
+    }
+    
+    rule {
+        source_labels = ["__meta_docker_container_label_tier"]
+        target_label = "tier"
+    }
+    
+    // Filtrar apenas containers com logging=promtail
+    rule {
+        source_labels = ["__meta_docker_container_label_logging"]
+        regex = "promtail"
+        action = "keep"
+    }
+}
+
+// Coleta de logs
+loki.source.docker "containers" {
+    host = "unix:///var/run/docker.sock"
+    targets = discovery.relabel.docker_labels.output
+    forward_to = [loki.write.default.receiver]
+}
+
+// Envio para Loki
+loki.write "default" {
+    endpoint {
+        url = "http://loki:3100/loki/api/v1/push"
+    }
+    external_labels = {
+        job = "docker-logs",
+        cluster = "local",
+    }
+}
+
+// Métricas
+prometheus.scrape "basic" {
+    targets = [
+        {"__address__" = "prometheus:9090"},
+    ]
+    forward_to = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.remote_write "default" {
+    endpoint {
+        url = "http://prometheus:9090/api/v1/write"
+    }
+}

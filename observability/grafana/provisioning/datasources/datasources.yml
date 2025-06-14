@@ -1,0 +1,62 @@
+# =================================================================
+# GRAFANA - CONFIGURAÇÃO AUTOMÁTICA DE DATASOURCES
+# =================================================================
+# =================================================================
+# CONFIGURAÇÃO DE FONTES DE DADOS DO GRAFANA
+# =================================================================
+
+apiVersion: 1
+
+datasources:
+  # Prometheus - Para métricas
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    jsonData:
+      exemplarTraceIdDestinations:
+        # Configuração para link de traces
+        - datasourceUid: tempo
+          name: TraceID
+      httpMethod: POST
+      timeInterval: 15s
+    editable: true
+
+  # Tempo - Para traces
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      nodeGraph:
+        enabled: true
+      serviceMap:
+        datasourceUid: prometheus
+      tracesToLogs:
+        datasourceUid: loki
+        filterByTraceID: true
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        tags: ["service", "job"]
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: loki
+    editable: true
+
+  # Loki - Para logs estruturados
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100    # ← MUDANÇA AQUI! Era http://grafana:3000/loki
+    jsonData:
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: "traceId[\"=: ]+([a-zA-Z0-9]+)"
+          name: TraceID
+          url: "$${__value.raw}"
+      maxLines: 1000
+    editable: true

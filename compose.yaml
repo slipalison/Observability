@@ -1,13 +1,297 @@
-﻿services:
+﻿# =================================================================
+# DOCKER COMPOSE FILE FOR OBSERVABILITY STACK
+# OBSERVABILITY STACK - ENTERPRISE GRADE
+# Jaeger + Prometheus + Grafana + OpenTelemetry Collector + Alloy
+# =================================================================
+
+networks:
+  observability:
+    driver: bridge
+  app-network:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  tempo_data:
+    driver: local
+  alloy_data:
+    driver: local
+  loki_data:
+    driver: local
+
+
+services:
+  # =================================================================
+  # OPENTELEMETRY COLLECTOR - HUB CENTRAL DE TELEMETRIA
+  # =================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.91.0
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./observability/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Prometheus metrics endpoint
+      - "8889:8889"   # Prometheus metrics endpoint for collector internal metrics
+    depends_on:
+      - tempo
+      - prometheus
+    networks:
+      - observability
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:13133/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # =================================================================
+  # TEMPO - TRACES DISTRIBUÍDOS (Substituto do Jaeger)
+  # =================================================================
+  tempo:
+    image: grafana/tempo:2.3.1
+    container_name: tempo
+    command: ["-config.file=/etc/tempo.yml"]
+    volumes:
+      - ./observability/tempo.yml:/etc/tempo.yml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "9095:9095"   # Tempo gRPC
+    networks:
+      - observability
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3200/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # =================================================================
+  # PROMETHEUS - MÉTRICAS
+  # =================================================================
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - observability
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # =================================================================
+  # ALLOY - LOGS + TRACES + METRICS COLLECTION
+  # =================================================================
+  alloy:
+    image: grafana/alloy:v1.0.0
+    container_name: alloy
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - --stability.level=experimental
+    volumes:
+      - ./observability/alloy-config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log:/var/log:ro
+    ports:
+      - "12345:12345"  # Alloy UI
+    networks:
+      - observability
+      - app-network
+    restart: unless-stopped
+    depends_on:
+      - tempo
+      - prometheus
+
+  # =================================================================
+  # GRAFANA - DASHBOARDS E VISUALIZAÇÃO
+  # =================================================================
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor,correlations
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - observability
+      - app-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - tempo
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # =================================================================
+  # SUAS APLICAÇÕES (.NET)
+  # =================================================================
   observability.webapi:
     image: observability.webapi
     build:
       context: .
       dockerfile: src/Observability.WebApi/Dockerfile
+    container_name: observability-webapi
     ports:
       - "5240:8080"
       - "5241:8081"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:8080
+      # OpenTelemetry Configuration
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=observability-webapi
+      - OTEL_SERVICE_VERSION=1.0.0
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=observability-webapi,service.version=1.0.0,deployment.environment=development
+    depends_on:
+      - otel-collector
+    networks:
+      - observability
+      - app-network
+    restart: unless-stopped
+    labels:
+      # Labels ESSENCIAIS para o Alloy
+      - "logging=promtail"              # ← Indica coleta de logs
+      - "service=webapi"                # ← Nome do serviço
+      - "team=platform"                 # ← Time responsável
+      # Labels EXTRAS para melhor organização
+      - "application=observability"     # ← Nome da aplicação
+      - "component=api"                 # ← Tipo do componente
+      - "framework=dotnet"              # ← Framework usado
+      - "version=1.0.0"                 # ← Versão da aplicação
+      - "environment=development"       # ← Ambiente
+      - "tier=backend"                  # ← Camada da aplicação
+
+
+  # =================================================================
+  # REDIS - Para demonstrar traces distribuídos
+  # =================================================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - observability
+      - app-network
+    restart: unless-stopped
+
+  # =================================================================
+  # POSTGRESQL - Para demonstrar traces de database
+  # =================================================================
+  postgresql:
+    image: postgres:16.1-alpine
+    container_name: postgresql
+    environment:
+      - POSTGRES_DB=observability
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./observability/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - observability
+      - app-network
+    restart: unless-stopped
+
+  # =================================================================
+  # POSTGRES EXPORTER - Exportador de métricas para o PostgreSQL
+  # =================================================================
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: postgres-exporter
+    env_file:
+      - ./observability/postgres-exporter/postgres-exporter.env
+    volumes:
+      - ./observability/postgres-exporter/queries.yaml:/etc/postgres_exporter/queries.yaml:ro
+    ports:
+      - "9187:9187"
+    networks:
+      - observability
+      - app-network
+    depends_on:
+      - postgresql
+    restart: unless-stopped
+
+  # =================================================================
+  # REDIS EXPORTER - Exportador de métricas para o Redis
+  # =================================================================
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.55.0
+    container_name: redis-exporter
+    env_file:
+      - ./observability/redis-exporter/redis-exporter.env
+    ports:
+      - "9121:9121"
+    networks:
+      - observability
+      - app-network
+    depends_on:
+      - redis
+    restart: unless-stopped
+    
+  # =================================================================
+  # LOKI - LOGS STORAGE E INDEXAÇÃO
+  # =================================================================
+  loki:
+    image: grafana/loki:2.9.3
+    container_name: loki
+    command: -config.file=/etc/loki/local-config.yaml
+    user: "0:0"  # ← ADICIONADO: Roda como root para evitar problemas de permissão
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/tmp/loki  # ← Volume externo com permissões corretas
+    networks:
+      - observability
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3100/ready || exit 1" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  
+  
+
+
 
