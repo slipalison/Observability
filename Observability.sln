@@ -1,0 +1,30 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Observability.WebApi", "src\Observability.WebApi\Observability.WebApi.csproj", "{6FCAAAF9-7533-44FA-8350-FDC0D85E981C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{983CA996-9967-48DE-A932-44113D94695D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Infra", "Infra", "{7B2098FD-795B-4306-88E3-ABC57848198B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8CA02280-DA65-4F60-8E8B-B473F0D5FCA7}"
+	ProjectSection(SolutionItems) = preProject
+		compose.yaml = compose.yaml
+		.dockerignore = .dockerignore
+		README.md = README.md
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6FCAAAF9-7533-44FA-8350-FDC0D85E981C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6FCAAAF9-7533-44FA-8350-FDC0D85E981C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6FCAAAF9-7533-44FA-8350-FDC0D85E981C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6FCAAAF9-7533-44FA-8350-FDC0D85E981C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{6FCAAAF9-7533-44FA-8350-FDC0D85E981C} = {983CA996-9967-48DE-A932-44113D94695D}
+	EndGlobalSection
+EndGlobal

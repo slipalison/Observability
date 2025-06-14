@@ -1,0 +1,13 @@
+﻿services:
+  observability.webapi:
+    image: observability.webapi
+    build:
+      context: .
+      dockerfile: src/Observability.WebApi/Dockerfile
+    ports:
+      - "5240:8080"
+      - "5241:8081"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+

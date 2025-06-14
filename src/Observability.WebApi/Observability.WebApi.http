@@ -1,0 +1,6 @@
+@Observability.WebApi_HostAddress = http://localhost:5240
+
+GET {{Observability.WebApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
