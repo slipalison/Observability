@@ -1,5 +1,10 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using Application.Orders;
+using Npgsql;
+using Observability.WebApi.Application.Orders;
+using Observability.WebApi.Infrastructure.Metrics;
+using Observability.WebApi.Infrastructure.Persistence;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -43,6 +48,36 @@ public class Program
             });
 
             OpenTelemetry(builder);
+            
+            
+
+            // ==========================================================================================
+            // 1. REGISTRO DOS SERVIÇOS NO CONTÊINER DE INJEÇÃO DE DEPENDÊNCIA
+            // ==========================================================================================
+
+            // Infraestrutura: Registra a fonte de dados do PostgreSQL como um singleton.
+            // O NpgsqlDataSource gerencia o pool de conexões de forma eficiente.
+            var connectionString = builder.Configuration.GetConnectionString("Database");
+            builder.Services.AddSingleton<NpgsqlDataSource>(_ => new NpgsqlDataSourceBuilder(connectionString).Build());
+
+            // Infraestrutura -> Aplicação: Registra a implementação concreta (ECommerceMetrics)
+            // e sua abstração (IECommerceMetrics). É um singleton para que a mesma instância
+            // dos contadores/histogramas seja usada em toda a aplicação.
+            builder.Services.AddSingleton<ECommerceMetrics>();
+            builder.Services.AddSingleton<IECommerceMetrics>(sp => sp.GetRequiredService<ECommerceMetrics>());
+
+            // Infraestrutura -> Aplicação: Registra a implementação do repositório.
+            // Scoped significa que uma nova instância será criada para cada requisição HTTP.
+            builder.Services.AddScoped<IOrderRepository, PostgresOrderRepository>();
+            
+            // Aplicação: Registra o serviço de aplicação.
+            builder.Services.AddScoped<OrderService>();
+            
+            // ==========================================================================================
+
+
+            
+            
             // 3. Configuração de serviços
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
@@ -158,6 +193,7 @@ public class Program
 
                 // Métricas personalizadas
                 .AddMeter(serviceName)
+                .AddMeter(ECommerceMetrics.MeterName)
 
                 // Exportação para o OpenTelemetry Collector
                 .AddOtlpExporter(options =>
