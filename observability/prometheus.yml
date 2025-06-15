@@ -44,14 +44,14 @@ scrape_configs:
         labels:
           service: "tempo"
 
-  # Coletar métricas da API .NET usando o endpoint de métricas
-  - job_name: "observability-webapi"
-    scrape_interval: 5s
-    static_configs:
-      - targets: ["observability.webapi:8081"]
-        labels:
-          service: "observability-webapi"
-          component: "api"
+#  # Coletar métricas da API .NET usando o endpoint de métricas
+#  - job_name: "observability-webapi"
+#    scrape_interval: 5s
+#    static_configs:
+#      - targets: ["observability.webapi:8081"]
+#        labels:
+#          service: "observability-webapi"
+#          component: "api"
 
   # Coletar métricas do Redis
   - job_name: "redis"

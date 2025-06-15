@@ -1,7 +1,10 @@
-
+using System.Diagnostics;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Serilog;
-using Serilog.Events;
-using Serilog.Formatting.Json;
+
 
 namespace Observability.WebApi;
 
@@ -37,6 +40,7 @@ public class Program
                     .Enrich.FromLogContext();
             });
 
+            OpenTelemetry(builder);
             // 3. Configuração de serviços
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
@@ -49,7 +53,7 @@ public class Program
                     Description = "API para demonstração de observabilidade"
                 });
             });
-            builder.Services.AddOpenApi();
+            //builder.Services.AddOpenApi();
 
             var app = builder.Build();
 
@@ -67,7 +71,7 @@ public class Program
             // 5. Swagger apenas em desenvolvimento
             if (app.Environment.IsDevelopment())
             {
-                app.MapOpenApi();
+               // app.MapOpenApi();
                 app.UseSwagger();
                 app.UseSwaggerUI(c =>
                 {
@@ -106,5 +110,62 @@ public class Program
         {
             Log.CloseAndFlush();
         }
+    }
+
+    private static void OpenTelemetry(WebApplicationBuilder builder)
+    {
+        const string serviceName = "Observability.WebApi";
+        const string serviceVersion = "1.0.0";
+        const string otelCollectorEndpoint = "http://otel-collector:4318";
+
+
+
+        builder.Services.AddOpenTelemetry()
+            .ConfigureResource(resource => resource
+                .AddService(serviceName: serviceName, serviceVersion: serviceVersion))
+
+
+            // TRACES - configuração
+            .WithTracing(tracerBuilder => tracerBuilder
+                // Instrumentações automáticas para frameworks
+                .AddAspNetCoreInstrumentation(opts => opts.RecordException = true)
+                .AddHttpClientInstrumentation()
+                .AddSqlClientInstrumentation()
+                .AddEntityFrameworkCoreInstrumentation()
+                .AddRedisInstrumentation()
+
+                // Fontes de telemetria
+                .AddSource("Serilog")                    // Integração com Serilog
+                .AddSource(serviceName)
+
+                // Fonte personalizada
+
+                // Exportação para o OpenTelemetry Collector
+                .AddOtlpExporter(options => {
+                    options.Endpoint = new Uri($"{otelCollectorEndpoint}/v1/traces");
+                    options.Protocol = OtlpExportProtocol.HttpProtobuf;
+                })
+            )
+
+            // MÉTRICAS - configuração
+            .WithMetrics(metricsBuilder => metricsBuilder
+                // Instrumentações automáticas para métricas
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddRuntimeInstrumentation()
+
+                // Métricas personalizadas
+                .AddMeter(serviceName)
+
+                // Exportação para o OpenTelemetry Collector
+                .AddOtlpExporter(options => {
+                    options.Endpoint = new Uri($"{otelCollectorEndpoint}/v1/metrics");
+                    options.Protocol = OtlpExportProtocol.HttpProtobuf;
+                })
+            );
+
+        builder.Services.AddSingleton(new ActivitySource(serviceName));
+
+
     }
 }
