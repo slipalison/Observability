@@ -2,6 +2,11 @@
 # OPENTELEMETRY COLLECTOR - CONFIGURAÇÃO DO HUB CENTRAL
 # =================================================================
 
+# NOVO: Habilita extensões adicionais
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
 # 1. RECEIVERS: Como o coletor recebe dados
 receivers:
   otlp:
@@ -47,6 +52,7 @@ exporters:
 
 # 4. SERVICE: Define os pipelines (liga receivers, processors e exporters)
 service:
+  extensions: [health_check] # NOVO: Ativa a extensão de health check
   pipelines:
     # Pipeline de TRACES
     traces:

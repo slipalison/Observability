@@ -36,8 +36,9 @@ services:
     ports:
       - "4317:4317"   # OTLP gRPC receiver
       - "4318:4318"   # OTLP HTTP receiver
-      - "8888:8888"   # Prometheus metrics endpoint
-      - "8889:8889"   # Prometheus metrics endpoint for collector internal metrics
+      - "13133:13133" # CORREÇÃO: Expor a porta do Health Check
+      - "8889:8889"   # CORREÇÃO: Endpoint do Prometheus Exporter (métricas das apps)
+      - "8888:8888"   # Endpoint para métricas internas do próprio Collector (se habilitado)
     depends_on:
       - tempo
       - prometheus
