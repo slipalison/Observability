@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -12,10 +13,11 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        
         var configuration = new ConfigurationBuilder()
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true)
+            .AddJsonFile(
+                $"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json",
+                optional: true)
             .AddEnvironmentVariables()
             .Build();
 
@@ -71,7 +73,7 @@ public class Program
             // 5. Swagger apenas em desenvolvimento
             if (app.Environment.IsDevelopment())
             {
-               // app.MapOpenApi();
+                // app.MapOpenApi();
                 app.UseSwagger();
                 app.UseSwaggerUI(c =>
                 {
@@ -85,7 +87,8 @@ public class Program
             {
                 errorApp.Run(async context =>
                 {
-                    var exceptionHandlerPathFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
+                    var exceptionHandlerPathFeature =
+                        context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
                     var exception = exceptionHandlerPathFeature?.Error;
 
                     Log.Error(exception, "Exceção não tratada: {ErrorMessage}", exception?.Message);
@@ -119,11 +122,9 @@ public class Program
         const string otelCollectorEndpoint = "http://otel-collector:4318";
 
 
-
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
                 .AddService(serviceName: serviceName, serviceVersion: serviceVersion))
-
 
             // TRACES - configuração
             .WithTracing(tracerBuilder => tracerBuilder
@@ -135,13 +136,14 @@ public class Program
                 .AddRedisInstrumentation()
 
                 // Fontes de telemetria
-                .AddSource("Serilog")                    // Integração com Serilog
+                .AddSource("Serilog") // Integração com Serilog
                 .AddSource(serviceName)
 
                 // Fonte personalizada
 
                 // Exportação para o OpenTelemetry Collector
-                .AddOtlpExporter(options => {
+                .AddOtlpExporter(options =>
+                {
                     options.Endpoint = new Uri($"{otelCollectorEndpoint}/v1/traces");
                     options.Protocol = OtlpExportProtocol.HttpProtobuf;
                 })
@@ -158,7 +160,8 @@ public class Program
                 .AddMeter(serviceName)
 
                 // Exportação para o OpenTelemetry Collector
-                .AddOtlpExporter(options => {
+                .AddOtlpExporter(options =>
+                {
                     options.Endpoint = new Uri($"{otelCollectorEndpoint}/v1/metrics");
                     options.Protocol = OtlpExportProtocol.HttpProtobuf;
                 })
@@ -166,6 +169,13 @@ public class Program
 
         builder.Services.AddSingleton(new ActivitySource(serviceName));
 
+// ==========================================================================================
+// 1. CRIE E REGISTRE O METER PARA INJEÇÃO DE DEPENDÊNCIA
+// ==========================================================================================
+        var meter = new Meter(serviceName);
 
+// ESTA É A LINHA MAIS IMPORTANTE PARA CORRIGIR O ERRO:
+        builder.Services.AddSingleton(meter);
+// ==========================================================================================
     }
 }
